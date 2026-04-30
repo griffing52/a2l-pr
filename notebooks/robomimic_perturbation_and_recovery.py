@@ -250,3 +250,66 @@ if DATASET_PATH and 'load_robomimic_trajectory' in globals():
             display(HTML(html))
         else:
             print("Skipping display because at least one video failed to render.")
+
+# %% [markdown]
+# ## 11. Visualize Other Perturbations
+
+# %%
+if DATASET_PATH and 'load_robomimic_trajectory' in globals() and 'generator' in globals() and 'original_traj' in globals() and original_traj is not None:
+    print("Generating and visualizing other perturbation types...")
+    
+    other_perturbations = [
+        PerturbationType.PREMATURE_CLOSE,
+        PerturbationType.PREMATURE_OPEN,
+        PerturbationType.LATERAL_DRIFT
+    ]
+    
+    html_content = "<div style='display: flex; flex-direction: row; flex-wrap: wrap; justify-content: space-around;'>"
+    
+    # Add original video to the grid if available
+    orig_out = str(OUTPUT_DIR / 'original.mp4')
+    if os.path.exists(orig_out):
+        orig_b64 = b64encode(open(orig_out, "rb").read()).decode('ascii')
+        html_content += f"""
+        <div style='text-align: center; margin-bottom: 20px;'>
+            <h3>Original Trajectory ({ep_name})</h3>
+            <video width='350' controls autoplay loop>
+                <source src='data:video/mp4;base64,{orig_b64}' type='video/mp4'>
+            </video>
+        </div>
+        """
+        
+    for p_type in other_perturbations:
+        print(f"\\nApplying {p_type.name}...")
+        p_result = generator.apply_perturbation(
+            trajectory, 
+            p_type, 
+            severity=0.5,
+            seed=42
+        )
+        
+        if p_result is None:
+            print(f"Failed to generate {p_type.name} for this trajectory.")
+            continue
+            
+        print(f"Success! Theoretical Failure Mode: {p_result.theoretical_failure_mode}")
+        
+        pert_out = str(OUTPUT_DIR / f'perturbed_{p_type.name}.mp4')
+        print(f"Rendering {p_type.name} trajectory...")
+        ok_pert = render_trajectory_to_video(p_result.perturbed_trajectory, DATASET_PATH, ep_name, pert_out)
+        
+        if ok_pert and os.path.exists(pert_out):
+            pert_b64 = b64encode(open(pert_out, "rb").read()).decode('ascii')
+            html_content += f"""
+            <div style='text-align: center; margin-bottom: 20px;'>
+                <h3>Perturbed ({p_type.value})</h3>
+                <video width='350' controls autoplay loop>
+                    <source src='data:video/mp4;base64,{pert_b64}' type='video/mp4'>
+                </video>
+            </div>
+            """
+            
+    html_content += "</div>"
+    display(HTML(html_content))
+else:
+    print("Prerequisites missing for visualizing other perturbations.")
