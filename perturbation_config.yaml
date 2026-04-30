@@ -1,0 +1,12 @@
+datasets:
+  robomimic:
+    gripper_open_threshold: 0.7
+    gripper_close_threshold: 0.3
+  piper_csv:
+    gripper_open_threshold: 0.7
+    gripper_close_threshold: 0.3
+perturbations:
+  underreach_idle_base_steps: 10
+  underreach_idle_extra_steps: 30
+  lateral_drift_base_m: 0.015
+  lateral_drift_extra_m: 0.030

@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "a2l-pr"
+version = "0.1.0"
+description = "A2L Perturbation and Recovery framework for robotic trajectories."
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "numpy",
+    "pyyaml",
+    "pandas",
+    "matplotlib",
+    "jupyter",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
