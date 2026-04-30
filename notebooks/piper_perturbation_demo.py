@@ -121,42 +121,36 @@ if os.path.exists(piper_csv_path):
 # We will encode it at 60 FPS to play it back quickly.
 
 # %%
-import cv2
-import glob
+import subprocess
+from IPython.display import Video, display
+import os
 
-# Path to realsense_color images
-realsense_dir = os.path.abspath(os.path.join(
-    os.path.dirname(__file__), "..", "..", "agilex_data_collection", "pick_bag_joe", "episode_000", "realsense_color"
+video_name = f"piper_{EPISODE}.mp4"
+fps = 30
+
+zed_dir = os.path.abspath(os.path.join(
+    os.getcwd(), "..", "..", "agilex_data_collection", TASK, EPISODE, "zed_color"
 ))
 
-if os.path.exists(realsense_dir):
-    print("\nGenerating video from realsense images...")
-    image_files = sorted(glob.glob(os.path.join(realsense_dir, "*.png")))
-    
-    if len(image_files) > 0:
-        # Read first image to get dimensions
-        first_img = cv2.imread(image_files[0])
-        height, width, layers = first_img.shape
-        
-        video_name = 'piper_episode_000_fast.mp4'
-        # Define the codec and create VideoWriter object
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        
-        # 60 fps to speed up the video playback
-        fps = 60
-        video = cv2.VideoWriter(video_name, fourcc, fps, (width, height))
-        
-        for img_path in image_files:
-            video.write(cv2.imread(img_path))
-            
-        cv2.destroyAllWindows()
-        video.release()
-        print(f"Video saved successfully as '{video_name}' in the current working directory.")
-        
-        # If running in a Jupyter Notebook, you can display it using:
-        # from IPython.display import Video
-        # display(Video(video_name))
-    else:
-        print("No png images found in the directory.")
+cmd = [
+    "ffmpeg",
+    "-y",
+    "-framerate", str(fps),
+    "-pattern_type", "glob",
+    "-i", f"{zed_dir}/*.png",
+    "-c:v", "libx264",
+    "-preset", "slow",      # Slower compression = better efficiency
+    "-crf", "28",          # Higher CRF = smaller file size
+    "-pix_fmt", "yuv420p", # Essential for browser compatibility
+    "-vf", "scale=iw/2:-1", # OPTIONAL: Halves the resolution (huge size saver)
+    video_name
+]
+
+if os.path.exists(zed_dir):
+    print("\nGenerating video from zed images...")
+    print("Running FFmpeg...")
+    subprocess.run(cmd, check=True)
 else:
-    print(f"Directory not found: {realsense_dir}")
+    print(f"Directory {zed_dir} does not exist")
+
+display(Video(video_name, embed=True))

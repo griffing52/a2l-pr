@@ -128,3 +128,125 @@ if result is not None:
     
     # Pretty print the JSON
     print(recovery_to_json(recovery_code))
+
+# %% [markdown]
+# ## 10. Simulator Video Playback
+
+# %%
+import os
+import h5py
+import imageio
+import numpy as np
+from pathlib import Path
+from IPython.display import HTML, display
+from base64 import b64encode
+
+try:
+    import robomimic.utils.obs_utils as ObsUtils
+    import robomimic.utils.env_utils as EnvUtils
+    import robomimic.utils.file_utils as FileUtils
+except ImportError:
+    print("robomimic is not installed. Video playback may fail.")
+
+def render_trajectory_to_video(traj_dict, dataset_path, ep_name, output_path):
+    if not os.path.exists(dataset_path):
+        print(f"Dataset {dataset_path} not found.")
+        return False
+
+    # Initialize headless env
+    dummy_spec = dict(obs=dict(low_dim=["robot0_eef_pos"], rgb=[]))
+    ObsUtils.initialize_obs_utils_with_obs_specs(obs_modality_specs=dummy_spec)
+    env_meta = FileUtils.get_env_metadata_from_dataset(dataset_path=dataset_path)
+    env = EnvUtils.create_env_from_metadata(env_meta=env_meta, render=False, render_offscreen=True)
+    is_robosuite_env = EnvUtils.is_robosuite_env(env_meta)
+
+    with h5py.File(dataset_path, 'r') as f:
+        states = f[ep_name]['states'][()]
+        initial_state = dict(states=states[0])
+        if is_robosuite_env:
+            initial_state["model"] = f[ep_name].attrs["model_file"]
+            initial_state["ep_meta"] = f[ep_name].attrs.get("ep_meta", None)
+
+    env.reset_to(initial_state)
+    actions = traj_dict.get('actions', [])
+
+    if len(actions) == 0:
+        print("No actions found for playback.")
+        return False
+
+    writer = imageio.get_writer(output_path, fps=20)
+    print(f"Rendering {len(actions)} frames to {output_path}...")
+    for i in range(len(actions)):
+        env.step(actions[i])
+        if i % 5 == 0:
+            frame = env.render(mode="rgb_array", height=256, width=256, camera_name="agentview")
+            writer.append_data(frame)
+    writer.close()
+    return True
+
+# Map script variables to the snippet's expected variables
+DATASET_PATH = robomimic_hdf5_path
+OUTPUT_DIR = Path(os.path.dirname(__file__)) / "output"
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+# NOTE: Do not rely on global `trajectory` / `result` here, since later debug cells may overwrite them.
+if DATASET_PATH and 'load_robomimic_trajectory' in globals():
+    # Pick episode name from the loaded dataset demo selection.
+    if 'first_demo_name' in locals():
+        ep_name = first_demo_name
+    elif 'trajectory' in locals() and isinstance(trajectory, dict) and trajectory.get('name'):
+        ep_name = trajectory['name']
+    else:
+        ep_name = 'data/demo_0'
+        
+    demo_key = ep_name.replace("data/", "") if ep_name.startswith("data/") else ep_name
+
+    # Pick perturbation result from the main perturbation section.
+    selected_result = None
+    if 'premature_close_result' in locals() and premature_close_result is not None:
+        selected_result = premature_close_result
+    elif 'perturbation_results' in locals() and perturbation_results:
+        selected_result = perturbation_results[0]
+    elif 'result' in locals() and result is not None:
+        selected_result = result
+
+    original_traj = load_robomimic_trajectory(DATASET_PATH, demo_key=demo_key)
+
+    if original_traj is None or selected_result is None:
+        print("Missing original trajectory or perturbation result for playback.")
+    else:
+        orig_out = str(OUTPUT_DIR / 'original.mp4')
+        pert_out = str(OUTPUT_DIR / 'perturbed.mp4')
+
+        print(f"Playback episode: {ep_name}")
+        print(f"Perturbation shown: {selected_result.perturbation_type.value}")
+
+        print("Rendering original trajectory (this may take a minute)...")
+        ok_orig = render_trajectory_to_video(original_traj, DATASET_PATH, ep_name, orig_out)
+        print("Rendering perturbed trajectory...")
+        ok_pert = render_trajectory_to_video(selected_result.perturbed_trajectory, DATASET_PATH, ep_name, pert_out)
+
+        # Display side-by-side only when both fresh renders succeeded.
+        if ok_orig and ok_pert and os.path.exists(orig_out) and os.path.exists(pert_out):
+            orig_b64 = b64encode(open(orig_out, "rb").read()).decode('ascii')
+            pert_b64 = b64encode(open(pert_out, "rb").read()).decode('ascii')
+
+            html = f"""
+            <div style='display: flex; flex-direction: row; justify-content: space-around;'>
+                <div style='text-align: center;'>
+                    <h3>Original Trajectory ({ep_name})</h3>
+                    <video width='400' controls autoplay loop>
+                        <source src='data:video/mp4;base64,{orig_b64}' type='video/mp4'>
+                    </video>
+                </div>
+                <div style='text-align: center;'>
+                    <h3>Perturbed Trajectory ({selected_result.perturbation_type.value})</h3>
+                    <video width='400' controls autoplay loop>
+                        <source src='data:video/mp4;base64,{pert_b64}' type='video/mp4'>
+                    </video>
+                </div>
+            </div>
+            """
+            display(HTML(html))
+        else:
+            print("Skipping display because at least one video failed to render.")

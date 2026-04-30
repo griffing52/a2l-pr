@@ -145,12 +145,12 @@ def visualize_trajectory_comparison_3d(
     # 3D path visualization with color gradient representing time
     # Plot original as a faint grey line, then viridis scatter on top
     ax.plot(ee_orig[:, 0], ee_orig[:, 1], ee_orig[:, 2], color='grey', alpha=0.3, label='Original Path')
-    sc_orig = ax.scatter(ee_orig[:, 0], ee_orig[:, 1], ee_orig[:, 2], c=orig_time, cmap='viridis', s=10, alpha=0.8)
+    sc_orig = ax.scatter(ee_orig[:, 0], ee_orig[:, 1], ee_orig[:, 2], c=orig_time, cmap='viridis', s=5, alpha=0.8)
     ax.set_zlim(bottom=0)
 
     # Plot perturbed as a dashed faint line, then plasma scatter with different marker
-    ax.plot(ee_pert[:, 0], ee_pert[:, 1], ee_pert[:, 2], color='black', linestyle='--', alpha=0.3, label='Perturbed Path')
-    ax.scatter(ee_pert[:, 0], ee_pert[:, 1], ee_pert[:, 2], c=pert_time, cmap='plasma', s=15, marker='x', alpha=0.8)
+    ax.plot(ee_pert[:, 0], ee_pert[:, 1], ee_pert[:, 2], color='red', linestyle='--', alpha=0.5, label='Perturbed Path')
+    # ax.scatter(ee_pert[:, 0], ee_pert[:, 1], ee_pert[:, 2], c=pert_time, cmap='plasma', s=5, marker='x', alpha=0.8)
     
     # Add a colorbar to indicate time passage
     cbar = fig.colorbar(sc_orig, ax=ax, shrink=0.5, pad=0.1)
