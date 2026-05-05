@@ -56,7 +56,35 @@ class PerturbationGenerator:
             'contact_start': contact_start,
             'contact_end': contact_end,
         }
-    
+    def _overwrite_with_pause(self, trajectory: Dict, start: int, end: int, gripper_val=None, gripper_idx=-1) -> Dict:
+        traj_copy = copy.deepcopy(trajectory)
+        start = max(0, start)
+        end = min(len(traj_copy.get('actions', [])) - 1, end)
+        if start >= end:
+            return traj_copy
+        
+        if isinstance(traj_copy['actions'], np.ndarray):
+            traj_copy['actions'][start:end+1] = 0.0
+            if gripper_val is not None and gripper_idx >= 0:
+                traj_copy['actions'][start:end+1, gripper_idx] = gripper_val
+        elif isinstance(traj_copy['actions'], list):
+            for i in range(start, end+1):
+                traj_copy['actions'][i] = np.zeros_like(traj_copy['actions'][i])
+                if gripper_val is not None and gripper_idx >= 0:
+                    traj_copy['actions'][i][gripper_idx] = gripper_val
+                
+        obs = traj_copy.get('observations', {})
+        if isinstance(obs, dict):
+            for k, v in obs.items():
+                if isinstance(v, np.ndarray) and len(v) > start:
+                    freeze_val = v[start].copy()
+                    traj_copy['observations'][k][start:end+1] = freeze_val
+        elif isinstance(obs, list):
+            for i in range(start, end+1):
+                traj_copy['observations'][i] = copy.deepcopy(traj_copy['observations'][start])
+                
+        return traj_copy
+
     def apply_perturbation(
         self,
         trajectory: Dict,
@@ -164,9 +192,18 @@ class PerturbationGenerator:
         speed_scale = 0.2 + (1 - severity) * 0.3
         
         anchor_gap_steps = int(analyzer.metadata.get('underreach_anchor_gap_steps', max(2, traj_len // 40)))
-        perturb_step = int(anchor_step) - anchor_gap_steps - idle_steps + 1
+        perturb_step = int(anchor_step) - anchor_gap_steps
         perturb_step = max(approach_start, min(perturb_step, approach_end - 1))
-        perturbed = self.modifier.insert_pause(trajectory, perturb_step, idle_steps)
+        
+        # We want to pause from perturb_step until after it would have grasped
+        first_close = landmarks['first_close']
+        if first_close is None:
+            first_close = int(anchor_step) + 5
+            
+        # skip grasping and go straight to lifting
+        resume_step = min(traj_len - 1, int(first_close) + 8) 
+        
+        perturbed = self._overwrite_with_pause(trajectory, perturb_step, resume_step)
 
         failure_mode = {
             'pre_grasp': "Stopping short before grasp so the gripper cannot properly acquire the object.",
@@ -211,7 +248,7 @@ class PerturbationGenerator:
             else:
                 close_step = max(3, int(traj_len * 0.30))
         
-        shift_steps = -max(3, int((traj_len * 0.08) + severity * traj_len * 0.20))
+        shift_steps = -max(10, int((traj_len * 0.15) + severity * traj_len * 0.30))
         new_close_step = max(0, close_step + shift_steps)
         
         if new_close_step == close_step:
@@ -228,20 +265,24 @@ class PerturbationGenerator:
             "max_align_steps": max_align_steps,
         }
         
-        perturbed = self.modifier.shift_gripper_event(trajectory, close_step, shift_steps)
-        close_hold = max(3, int(4 + severity * 6))
-        
-        # Determine what "closed" value is from the trajectory state, assume 1.0 or whatever the max is
-        # Actually it's easier to just use the value from the original close step
         gripper_state = analyzer.get_gripper_state()
         closed_val = 1.0
         if gripper_state is not None and len(gripper_state) > close_step:
              closed_val = float(np.max(gripper_state))
              
-        perturbed = self.modifier.perturb_action_window(
-            perturbed,
-            (new_close_step, min(traj_len - 1, new_close_step + close_hold)),
-            gripper_value=closed_val,
+        # Find the gripper index
+        actions = trajectory.get('actions', [])
+        gripper_idx = self.modifier._gripper_action_index(trajectory, len(actions[0]) if len(actions)>0 else None)
+        
+        # Overwrite the downward reach with a pause but keep the gripper closed!
+        # It resumes shortly after the original close step, so it lifts empty handed.
+        resume_step = min(traj_len - 1, close_step + 5)
+        perturbed = self._overwrite_with_pause(
+            trajectory, 
+            new_close_step, 
+            resume_step, 
+            gripper_val=closed_val, 
+            gripper_idx=gripper_idx
         )
         
         return PerturbationResult(
@@ -337,8 +378,8 @@ class PerturbationGenerator:
         
         perturb_start, perturb_end = self._clamp_window(perturb_start, perturb_end, traj_len)
         
-        drift_base = float(analyzer.metadata.get('lateral_drift_base_m', 0.015))
-        drift_extra = float(analyzer.metadata.get('lateral_drift_extra_m', 0.030))
+        drift_base = float(analyzer.metadata.get('lateral_drift_base_m', 0.050))
+        drift_extra = float(analyzer.metadata.get('lateral_drift_extra_m', 0.080))
         max_drift = drift_base + severity * drift_extra
         lateral_offset = np.array([
             rng.uniform(-max_drift, max_drift),
@@ -346,12 +387,23 @@ class PerturbationGenerator:
             0.0
         ])
         
-        perturbed = self.modifier.perturb_ee_position(
-            trajectory,
-            (perturb_start, perturb_end),
-            lateral_offset,
-            mode='additive'
-        )
+        perturbed = copy.deepcopy(trajectory)
+        obs = perturbed.get('observations', {})
+        ee_key = None
+        for k in ['object-state', 'robot0_eef_pos', 'eef_pos', 'ee_pos', 'slave_ee_pos']:
+            if k in obs:
+                ee_key = k
+                break
+        
+        if ee_key and isinstance(obs[ee_key], np.ndarray):
+            ee_array = obs[ee_key].copy()
+            drift_duration = perturb_end - perturb_start + 1
+            if drift_duration > 0:
+                ramp = np.linspace(0, 1, drift_duration)[:, np.newaxis] * lateral_offset[:3]
+                ee_array[perturb_start:perturb_end+1, :3] += ramp
+                if perturb_end + 1 < traj_len:
+                    ee_array[perturb_end+1:, :3] += lateral_offset[:3]
+            perturbed['observations'][ee_key] = ee_array
         perturbed = self.modifier.perturb_action_window(
             perturbed,
             (max(0, perturb_start - 2), min(traj_len - 1, perturb_end + 2)),

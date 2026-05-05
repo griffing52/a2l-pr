@@ -6,3 +6,5 @@
 *.pyo
 *.pyd
 **/output/*
+
+**/*.pth
