@@ -33,17 +33,19 @@ class FailureRecoveryDataset(Dataset):
     def __getitem__(self, idx):
         record = self.data_records[idx]
         
-        # 1. Frames (e.g., 3 frames stacked channel-wise)
-        # Expected shape from record: (3, 3, H, W)
+        # 1. Frames or temporal feature vector
         frames = record['frames']
         if isinstance(frames, np.ndarray):
             frames = torch.from_numpy(frames).float()
             
         if self.transform:
             frames = self.transform(frames)
-            
-        N, C, H, W = frames.shape
-        frames_stacked = frames.reshape(N * C, H, W) # Stack channel-wise -> (N*C, H, W)
+        
+        if frames.ndim == 4:
+            N, C, H, W = frames.shape
+            frames_out = frames.reshape(N * C, H, W)
+        else:
+            frames_out = frames.reshape(-1)
         
         # 2. Actions
         actions = record.get('actions', None)
@@ -60,7 +62,7 @@ class FailureRecoveryDataset(Dataset):
         recovery_params = torch.tensor(rec_params, dtype=torch.float32)
         
         sample = {
-            'frames': frames_stacked,
+            'frames': frames_out,
             'failure_type': failure_type,
             'fsm_id': fsm_id,
             'recovery_params': recovery_params

@@ -183,11 +183,12 @@ class PerturbationGenerator:
             return None
         
         stop_short_distance_m = 0.03 + severity * 0.12
-        idle_base_steps = int(analyzer.metadata.get('underreach_idle_base_steps', 10))
-        idle_extra_steps = int(analyzer.metadata.get('underreach_idle_extra_steps', 30))
+        idle_base_steps = int(analyzer.metadata.get('underreach_idle_base_steps', 14))
+        idle_extra_steps = int(analyzer.metadata.get('underreach_idle_extra_steps', 40))
         idle_steps = int(idle_base_steps + severity * idle_extra_steps)
         max_idle_ratio = float(analyzer.metadata.get('underreach_idle_max_ratio', 0.45))
-        idle_steps = min(idle_steps, max(6, int(traj_len * max_idle_ratio)))
+        idle_steps = max(idle_steps, int(traj_len * (0.12 + 0.15 * severity)))
+        idle_steps = min(idle_steps, max(8, int(traj_len * max_idle_ratio)))
         forward_nudge_distance_m = 0.02 + severity * 0.06
         speed_scale = 0.2 + (1 - severity) * 0.3
         
@@ -248,7 +249,7 @@ class PerturbationGenerator:
             else:
                 close_step = max(3, int(traj_len * 0.30))
         
-        shift_steps = -max(10, int((traj_len * 0.15) + severity * traj_len * 0.30))
+        shift_steps = -max(12, int((traj_len * 0.18) + severity * traj_len * 0.35))
         new_close_step = max(0, close_step + shift_steps)
         
         if new_close_step == close_step:
@@ -374,7 +375,7 @@ class PerturbationGenerator:
         # as long as it covers the major event.
         min_end = int(major_event_step) + int(traj_len * 0.05)
         max_end = traj_len - 1
-        perturb_end = min(max_end, max(min_end, perturb_start + int(traj_len * 0.2)))
+        perturb_end = min(max_end, max(min_end, perturb_start + int(traj_len * 0.30)))
         
         perturb_start, perturb_end = self._clamp_window(perturb_start, perturb_end, traj_len)
         

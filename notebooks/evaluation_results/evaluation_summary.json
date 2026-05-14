@@ -1,0 +1,9 @@
+{
+  "evaluation_date": "2026-05-14 22:07:29.451752",
+  "dataset": "/home/griffing52/vail/bot2bot/bot2bot/a2l/robomimic/robomimic/datasets/square/ph/low_dim_v15.hdf5",
+  "models_tested": {
+    "bc_policy": "/home/griffing52/vail/bot2bot/bot2bot/a2l/robomimic/robomimic/bc_trained_models/test/20260511234956/models/model_epoch_950.pth",
+    "diffusion_policy": "/home/griffing52/vail/bot2bot/bot2bot/a2l/robomimic/robomimic/diffusion_policy_trained_models/test/20260512010513/models/model_epoch_950.pth"
+  },
+  "summary_statistics": {}
+}

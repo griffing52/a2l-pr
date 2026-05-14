@@ -16,20 +16,24 @@ class FailureRecoveryTrainer:
         val_dataset=None,
         batch_size=32,
         lr=1e-4,
+        weight_decay=1e-4,
+        grad_clip=1.0,
+        label_smoothing=0.05,
         device="cuda" if torch.cuda.is_available() else "cpu",
         weights=None
     ):
         self.device = device
         self.model = model.to(self.device)
+        self.grad_clip = grad_clip
         self.train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
         self.val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False) if val_dataset else None
         
-        self.optimizer = optim.AdamW(self.model.parameters(), lr=lr)
+        self.optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=weight_decay)
         
         # Loss functions
         # Weights can be adjusted based on class imbalance (e.g., 'no failure' might be very common)
         class_weights = torch.tensor(weights).float().to(device) if weights else None
-        self.criterion_failure = nn.CrossEntropyLoss(weight=class_weights)
+        self.criterion_failure = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=label_smoothing)
         self.criterion_fsm = nn.CrossEntropyLoss()
         
         # We only want to compute regression loss when there is an actual failure
@@ -81,6 +85,8 @@ class FailureRecoveryTrainer:
             loss = loss_failure + loss_fsm + (10.0 * loss_recovery)
             
             loss.backward()
+            if self.grad_clip is not None:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
             self.optimizer.step()
             
             total_loss += loss.item()
