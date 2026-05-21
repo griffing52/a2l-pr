@@ -1,3 +1,5 @@
+figure out a way to do multiverse eval where when the residual wants to bud in, it creates new copy universe where it does it and where it doesn't for some time and then this process repeats if it happens again?
+
 add another perturbation of not closing the gripper enough, like, close a little bit but still reaching the target 
 
 add one where it closes its gripper too early, even though its not at the target yet and then hovers around there, like underreach idle but with an early close
