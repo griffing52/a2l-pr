@@ -20,7 +20,8 @@ import numpy as np
 import torch
 
 # Keep imports relative to this repository layout.
-A2L_PR_ROOT = Path(__file__).resolve().parents[1]
+A2L_PR_ROOT = Path("/home/griffing52/vail/bot2bot/bot2bot/a2l/a2l-pr")
+# A2L_PR_ROOT = Path(__file__).resolve().parents[1]
 A2L_ROOT = A2L_PR_ROOT.parent
 ROBOMIMIC_ROOT = A2L_ROOT / "robomimic" / "robomimic"
 sys.path.append(str(A2L_PR_ROOT / "src"))
@@ -40,6 +41,26 @@ STATE_KEYS = [
     "robot0_joint_pos",
     "robot0_joint_vel",
 ]
+
+
+MODEL_REGISTRY = {
+    "bc": {
+        "dir": "bc_trained_models/test",
+        "arg_name": "--bc_checkpoint",
+        "help": "Path to BC policy checkpoint (defaults to best under robomimic/bc_trained_models/test)",
+    },
+    "bc_transformer": {
+        "dir": "bc_transformer_trained_models/test",
+        "arg_name": "--bc_transformer_checkpoint",
+        "help": "Path to BC Transformer policy checkpoint (defaults to best under robomimic/bc_transformer_trained_models/test)",
+    },
+    "diffusion": {
+        "dir": "diffusion_policy_trained_models/test",
+        "arg_name": "--diffusion_checkpoint",
+        "help": "Path to Diffusion policy checkpoint (defaults to best under robomimic/diffusion_policy_trained_models/test)",
+    },
+}
+
 
 
 def find_best_checkpoint(model_dir):
@@ -316,10 +337,13 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--render_video", action="store_true")
     parser.add_argument("--video_skip", type=int, default=5)
-    parser.add_argument("--camera_names", nargs="+", default=["agentview", "robot0_eye_in_hand"])
-    parser.add_argument("--output_dir", type=str, default=str(A2L_PR_ROOT / "notebooks" / "official_eval_results"))
-    parser.add_argument("--bc_checkpoint", type=str, default=None)
-    parser.add_argument("--diffusion_checkpoint", type=str, default=None)
+    parser.add_argument("--camera_names", nargs="+", default=["agentview"])
+    parser.add_argument("--output_dir", type=str, default=str(A2L_PR_ROOT / "output" / "official_eval_results"))
+    
+    # Dynamically add registered model options
+    for name, config in MODEL_REGISTRY.items():
+        parser.add_argument(config["arg_name"], type=str, default=None, help=config["help"])
+
     parser.add_argument("--residual_checkpoint", type=str, default=str(A2L_PR_ROOT / "notebooks" / "gated_residual_recovery_policy.pth"))
     parser.add_argument("--gate_threshold", type=float, default=0.7)
     parser.add_argument("--residual_weight", type=float, default=0.1)
@@ -336,24 +360,30 @@ def main():
     torch.manual_seed(args.seed)
     device = TorchUtils.get_torch_device(try_to_use_cuda=True)
 
-    bc_checkpoint = args.bc_checkpoint or find_best_checkpoint(ROBOMIMIC_ROOT / "bc_trained_models" / "test")
-    diffusion_checkpoint = args.diffusion_checkpoint or find_best_checkpoint(ROBOMIMIC_ROOT / "diffusion_policy_trained_models" / "test")
+    # Resolve checkpoints dynamically
+    checkpoints = {}
+    for name, config in MODEL_REGISTRY.items():
+        arg_attr = config["arg_name"].lstrip('-').replace('-', '_')
+        val = getattr(args, arg_attr, None)
+        if val is None:
+            val = find_best_checkpoint(ROBOMIMIC_ROOT / config["dir"])
+        checkpoints[name] = val
+
     residual_policy = load_gated_residual(args.residual_checkpoint, device=device)
 
     print("Residual policy input: low-dimensional state/action history only; videos are evaluation renderings, not model inputs.")
-    print(f"BC checkpoint: {bc_checkpoint}")
-    print(f"Diffusion checkpoint: {diffusion_checkpoint}")
+    for name in MODEL_REGISTRY:
+        print(f"{name.upper()} checkpoint: {checkpoints[name]}")
     print(f"Residual checkpoint: {args.residual_checkpoint}")
     print(f"Output dir: {output_dir}")
 
     all_summaries = []
     all_rollouts = []
-    specs = [
-        ("bc", bc_checkpoint, None),
-        ("bc_gated_residual", bc_checkpoint, residual_policy),
-        ("diffusion", diffusion_checkpoint, None),
-        ("diffusion_gated_residual", diffusion_checkpoint, residual_policy),
-    ]
+    specs = []
+    for name in MODEL_REGISTRY:
+        specs.append((name, checkpoints[name], None))
+        specs.append((f"{name}_gated_residual", checkpoints[name], residual_policy))
+
     for name, checkpoint, maybe_residual in specs:
         print("\n" + "=" * 80)
         print(f"Evaluating {name}")

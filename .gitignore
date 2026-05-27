@@ -1,11 +1,14 @@
 # Ignore all __pycache__ directories anywhere in the project
 **/__pycache__/
 
+*.egg-info/
+
 # Ignore all compiled Python files
 *.pyc
 *.pyo
 *.pyd
 **/output/*
+output/
 
 **/*.pth
 
