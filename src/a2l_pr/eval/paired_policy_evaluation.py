@@ -33,7 +33,7 @@ sys.path.append(str(A2L_PR_ROOT / "src"))
 sys.path.append(str(ROBOMIMIC_ROOT))
 
 from a2l_pr.models import GatedResidualRecoveryPolicy  # noqa: E402
-from a2l_pr.utils import merge_failure_id_to_type, select_failure_label  # noqa: E402
+from a2l_pr.utils.failure_labels import merge_failure_id_to_type, select_failure_label  # noqa: E402
 import robomimic.utils.file_utils as FileUtils  # noqa: E402
 import robomimic.utils.obs_utils as ObsUtils  # noqa: E402
 import robomimic.utils.torch_utils as TorchUtils  # noqa: E402

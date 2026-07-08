@@ -151,6 +151,7 @@ class GatedResidualRecoveryPolicy(nn.Module):
         enc_num_layers=1,
         dec_num_layers=1,
         dropout=0.1,
+        predict_severity=False,
     ):
         super().__init__()
         self.state_dim = state_dim
@@ -158,6 +159,7 @@ class GatedResidualRecoveryPolicy(nn.Module):
         self.history_length = history_length
         self.prediction_horizon = prediction_horizon
         self.num_failure_types = num_failure_types
+        self.predict_severity = predict_severity
 
         self.step_encoder = nn.Sequential(
             nn.Linear(state_dim + action_dim, step_embed_dim),
@@ -183,6 +185,10 @@ class GatedResidualRecoveryPolicy(nn.Module):
         self.residual_head = nn.Linear(dec_hidden_dim, action_dim)
         self.gate_head = nn.Linear(dec_hidden_dim, 1)
         self.failure_type_head = nn.Linear(dec_hidden_dim, num_failure_types)
+        # Optional severity regression head (0..1). Only created when requested so that
+        # checkpoints trained without it still load with strict=True.
+        if predict_severity:
+            self.severity_head = nn.Linear(dec_hidden_dim, 1)
 
     def forward(self, past_states, past_actions, prediction_horizon=None, return_first_only=False):
         if prediction_horizon is None:
@@ -201,6 +207,7 @@ class GatedResidualRecoveryPolicy(nn.Module):
         residuals = []
         gate_logits = []
         failure_logits = []
+        severity_logits = []
         for _ in range(prediction_horizon):
             dec_in = self.decoder_input_proj(prev_residual).unsqueeze(1)
             dec_out, dec_hidden = self.decoder_gru(dec_in, dec_hidden)
@@ -209,6 +216,8 @@ class GatedResidualRecoveryPolicy(nn.Module):
             residuals.append(residual.unsqueeze(1))
             gate_logits.append(self.gate_head(dec_step).unsqueeze(1))
             failure_logits.append(self.failure_type_head(dec_step).unsqueeze(1))
+            if self.predict_severity:
+                severity_logits.append(self.severity_head(dec_step).unsqueeze(1))
             prev_residual = residual
 
         outputs = {
@@ -216,12 +225,17 @@ class GatedResidualRecoveryPolicy(nn.Module):
             "gate_logits": torch.cat(gate_logits, dim=1).squeeze(-1),
             "failure_logits": torch.cat(failure_logits, dim=1),
         }
+        if self.predict_severity:
+            outputs["severity_logits"] = torch.cat(severity_logits, dim=1).squeeze(-1)
         if return_first_only:
-            return {
+            first = {
                 "residuals": outputs["residuals"][:, 0, :],
                 "gate_logits": outputs["gate_logits"][:, 0],
                 "failure_logits": outputs["failure_logits"][:, 0, :],
             }
+            if self.predict_severity:
+                first["severity_logits"] = outputs["severity_logits"][:, 0]
+            return first
         return outputs
 
     def predict_first_step(self, past_states, past_actions):
@@ -232,4 +246,6 @@ class GatedResidualRecoveryPolicy(nn.Module):
             return_first_only=True,
         )
         outputs["gate_probs"] = torch.sigmoid(outputs["gate_logits"])
+        if self.predict_severity:
+            outputs["severity"] = torch.sigmoid(outputs["severity_logits"])
         return outputs
